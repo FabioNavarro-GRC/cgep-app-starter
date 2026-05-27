@@ -1,0 +1,86 @@
+name: "Acme Health - DevSecOps GRC Gate"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  id-token: write   # Obligatorio para conectar con AWS mediante OIDC sin usar contraseñas
+  contents: read
+
+jobs:
+  grc-governance:
+    name: "Compliance Audit & Evidence Signing"
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Descargar el código del repositorio
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Instalar el CLI de Open Policy Agent (OPA)
+      - name: Setup OPA
+        uses: openpolicyagent/setup-opa@v2
+        with:
+          version: v0.61.0
+
+      # 3. Correr las pruebas unitarias de Rego que validamos localmente
+      - name: Run OPA Unit Tests
+        run: opa test ./policies -v
+
+      # 4. Configurar las credenciales de AWS usando OIDC (Asume el rol del Sandbox)
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::520999258289:role/github-actions-role # Reemplaza con el ARN de tu rol de GitHub en AWS si lo tienes, o tus credenciales
+          audience: sts.amazonaws.com
+
+      # 5. Instalar y configurar Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      # 6. Inicializar y generar el plan de infraestructura en formato JSON para OPA
+      - name: Terraform Init & Plan
+        run: |
+          cd terraform
+          terraform init
+          terraform plan -out=tfplan
+          terraform show -json tfplan > tfplan.json
+
+      # 7. Evaluar el Plan de Terraform con nuestras políticas de OPA
+      - name: Evaluate Compliance Policy
+        run: |
+          compliance_result=$(opa eval --data ./policies/soc2_security.rego --input ./terraform/tfplan.json "data.soc2.security.deny" --format json)
+          echo "Compliance Report: $compliance_result"
+          
+          # Si el JSON contiene violaciones, abortamos el pipeline de inmediato
+          if echo "$compliance_result" | grep -q "SOC 2 Violación"; then
+            echo "❌ CUMPLIMIENTO FALLIDO: Se detectaron brechas de cumplimiento activas. Bloqueando despliegue."
+            exit 1
+          fi
+          echo "✅ CUMPLIMIENTO EXITOSO: La infraestructura cumple con los controles SOC 2."
+          echo "$compliance_result" > ../compliance-evidence.json
+
+      # 8. Instalar Cosign para la firma digital de la prueba
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      # 9. Generar firma digital y subir la evidencia firmada a nuestra bóveda inmutable S3
+      - name: Sign Evidence & Upload to Vault
+        run: |
+          # Generamos un par de llaves temporales para firmar la evidencia de la auditoría
+          cosign generate-key-pair --secret-key-file cosign.key --pub-key-file cosign.pub
+          
+          # Firmamos el archivo de evidencias
+          cosign sign-blob --key cosign.key --output-signature compliance-evidence.sig compliance-evidence.json
+          
+          # Subimos la evidencia original y su firma criptográfica a la bóveda inmutable S3
+          aws s3 cp compliance-evidence.json s3://acme-health-evidence-vault-520999258289/evidence-$(date +%F-%H%M%S).json
+          aws s3 cp compliance-evidence.sig s3://acme-health-evidence-vault-520999258289/evidence-$(date +%F-%H%M%S).sig
+          
+          echo "🔒 Evidencia firmada digitalmente y custodiada en la Bóveda Inmutable (Object Lock)."
