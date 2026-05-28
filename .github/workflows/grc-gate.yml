@@ -43,8 +43,8 @@ jobs:
         run: |
           cd terraform
           terraform init -backend=false
-          # Generamos el plan real de Terraform de forma segura sin conectarnos a AWS
-          terraform plan -backend=false -out=tfplan
+          # Generamos el plan real de Terraform sin banderas adicionales de backend
+          terraform plan -out=tfplan
           terraform show -json tfplan > tfplan.json
 
       # 2. Policy Check
