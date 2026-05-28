@@ -22,7 +22,7 @@ jobs:
 
       # 2. Instalar el CLI de Open Policy Agent (OPA)
       - name: Setup OPA
-        uses: openpolicyagent/setup-opa@v2
+        uses: openpolicyagent/setup-opa-action@v2
         with:
           version: v0.61.0
 
