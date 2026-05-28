@@ -28,11 +28,10 @@ jobs:
       - name: Setup Cosign
         uses: sigstore/cosign-installer@v3.5.0
 
-      - name: Install OPA CLI
-        run: |
-          curl -L -o opa https://openpolicyagent.org/downloads/v0.61.0/opa_linux_amd64_static
-          chmod +x opa
-          sudo mv opa /usr/local/bin/
+      - name: Setup OPA
+        uses: open-policy-agent/setup-opa@v2
+        with:
+          version: v0.61.0
 
       # =========================================================================
       # LOS 5 PASOS EXIGIDOS POR LA RÚBRICA DE CERTIFICACIÓN CGE-P
