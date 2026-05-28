@@ -58,10 +58,10 @@ jobs:
       # 8. Generar firma digital criptográfica de la evidencia (Capa 3 de Gobernanza)
       - name: Sign Evidence Locally
         run: |
-          # Generamos un par de llaves temporales para firmar la evidencia de la auditoría
-          cosign generate-key-pair --secret-key-file cosign.key --pub-key-file cosign.pub
+          # Generamos el par de llaves usando la sintaxis moderna de Cosign (sin contraseña interactiva)
+          cosign generate-key-pair --output-keypair cosign.key
           
-          # Firmamos el archivo de evidencias en caliente
+          # Firmamos el archivo de evidencias usando la llave privada generada (cosign.key es la privada)
           cosign sign-blob --key cosign.key --output-signature compliance-evidence.sig compliance-evidence.json
           
           echo "✅ CUMPLIMIENTO EXITOSO: Estructura de control validada."
