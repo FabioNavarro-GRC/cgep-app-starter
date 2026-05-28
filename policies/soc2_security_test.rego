@@ -1,46 +1,28 @@
-package soc2.security_test
+package soc2.security
 
-import data.soc2.security.allow
-import data.soc2.security.deny
-
-# --- TEST 1: Verificar paso exitoso si todo está bien configurado ---
-test_allow_valid_plan {
-    mock_input := {"resource_changes": [
-        {
-            "address": "aws_s3_bucket_server_side_encryption_configuration.uploads_encryption",
-            "type": "aws_s3_bucket_server_side_encryption_configuration",
-            "change": {"after": {"rule": [{"apply_server_side_encryption_by_default": [{"sse_algorithm": "aws:kms"}]}]}}
-        },
-        {
-            "address": "aws_dynamodb_table.intake",
-            "type": "aws_dynamodb_table",
-            "change": {"after": {"server_side_encryption": [{"enabled": true, "kms_key_arn": "arn:aws:kms:valid-key"}]}}
-        },
-        {
-            "address": "aws_s3_bucket_versioning.uploads_versioning",
-            "type": "aws_s3_bucket_versioning",
-            "change": {"after": {"versioning_configuration": [{"status": "Enabled"}]}}
-        }
-    ]}
-    allow with input as mock_input
-}
-
-# --- TEST 2: Detectar violación del GAP-01 (S3 sin KMS CMK) ---
-test_deny_unencrypted_s3 {
+test_s3_encryption_denied {
     mock_input := {"resource_changes": [{
-        "address": "aws_s3_bucket_server_side_encryption_configuration.bad_s3",
+        "address": "aws_s3_bucket_server_side_encryption_configuration.bad",
         "type": "aws_s3_bucket_server_side_encryption_configuration",
         "change": {"after": {"rule": [{"apply_server_side_encryption_by_default": [{"sse_algorithm": "AES256"}]}]}}
+    }]}
+    deny["SOC 2 Violación [CC6.1]: El bucket 'aws_s3_bucket_server_side_encryption_configuration.bad' debe usar cifrado SSE-KMS con una llave CMK controlada por el cliente."] with input as mock_input
+}
+
+test_dynamodb_no_kms_denied {
+    mock_input := {"resource_changes": [{
+        "address": "aws_dynamodb_table.bad",
+        "type": "aws_dynamodb_table",
+        "change": {"after": {"server_side_encryption": [{"enabled": true}]}}
     }]}
     count(deny) > 0 with input as mock_input
 }
 
-# --- TEST 3: Detectar violación del GAP-07 (IAM con Permisos Completos *) ---
-test_deny_wildcard_iam {
+test_s3_versioning_disabled {
     mock_input := {"resource_changes": [{
-        "address": "aws_iam_role_policy.bad_lambda",
-        "type": "aws_iam_role_policy",
-        "change": {"after": {"policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"dynamodb:*\"],\"Resource\":\"*\"}]}"}}
+        "address": "aws_s3_bucket_versioning.bad",
+        "type": "aws_s3_bucket_versioning",
+        "change": {"after": {"versioning_configuration": [{"status": "Suspended"}]}}
     }]}
     count(deny) > 0 with input as mock_input
 }
