@@ -41,10 +41,11 @@ jobs:
       # 1. Plan
       - name: Plan
         run: |
-          mkdir -p terraform && cd terraform
+          cd terraform
           terraform init -backend=false
-          # Creamos un plano de arquitectura simulado para que OPA evalúe la estructura
-          echo '{"resource_changes": []}' > tfplan.json
+          # Generamos el plan real de Terraform de forma segura sin conectarnos a AWS
+          terraform plan -backend=false -out=tfplan
+          terraform show -json tfplan > tfplan.json
 
       # 2. Policy Check
       - name: Policy Check
