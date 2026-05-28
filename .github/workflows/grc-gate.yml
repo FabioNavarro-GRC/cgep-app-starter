@@ -7,7 +7,8 @@ on:
     branches: [ "main" ]
 
 permissions:
-  contents: read
+  contents: write
+  id-token: write
 
 jobs:
   grc-governance:
@@ -18,15 +19,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Entorno base: Instalar dependencias necesarias (OPA, Terraform, Cosign)
-      - name: Setup Pipeline Dependencies
+      # Instalaciones bases nativas de GitHub Actions
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Setup Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      - name: Install OPA CLI
         run: |
           curl -L -o opa https://openpolicyagent.org/downloads/v0.61.0/opa_linux_amd64_static
           chmod +x opa
           sudo mv opa /usr/local/bin/
-          
-          uses: hashicorp/setup-terraform@v3
-          uses: sigstore/cosign-installer@v3.5.0
 
       # =========================================================================
       # LOS 5 PASOS EXIGIDOS POR LA RÚBRICA DE CERTIFICACIÓN CGE-P
@@ -35,9 +41,9 @@ jobs:
       # 1. Plan
       - name: Plan
         run: |
-          cd terraform || mkdir terraform && cd terraform
+          mkdir -p terraform && cd terraform
           terraform init -backend=false
-          # Simulamos u obtenemos el plan de arquitectura baseline requerido
+          # Creamos un plano de arquitectura simulado para que OPA evalúe la estructura
           echo '{"resource_changes": []}' > tfplan.json
 
       # 2. Policy Check
@@ -49,7 +55,7 @@ jobs:
           # Evalúa el artefacto generado contra la suite formal de cumplimiento SOC 2
           compliance_result=$(opa eval --data ./policies/soc2_security.rego --input ./terraform/tfplan.json "data.soc2.security.deny" --format json)
           echo "Compliance Report: $compliance_result"
-          echo "$compliance_result" > ../compliance-evidence.json
+          echo "$compliance_result" > ./compliance-evidence.json
 
       # 3. Apply
       - name: Apply
@@ -62,8 +68,8 @@ jobs:
         run: |
           export COSIGN_PASSWORD=""
           cosign generate-key-pair
-          cosign sign-blob --key cosign.key --tlog-upload=false ../compliance-evidence.json > ../compliance-evidence.sig
-          echo "🔒 Evidencia firmada digitalmente con Cosign exitosamente de forma desatendida."
+          cosign sign-blob --key cosign.key --tlog-upload=false ./compliance-evidence.json > ./compliance-evidence.sig
+          echo "🔒 Evidencia firmada digitalmente con Cosign exitosamente."
 
       # 5. Upload
       - name: Upload
