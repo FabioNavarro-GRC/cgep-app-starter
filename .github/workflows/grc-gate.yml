@@ -20,15 +20,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Instalar el CLI de Open Policy Agent (OPA)
-      - name: Setup OPA
-        uses: styrainc/setup-opa@v1
-        with:
-          version: v0.61.0
-
-      # 3. Correr las pruebas unitarias de Rego que validamos localmente
-      - name: Run OPA Unit Tests
-        run: opa test ./policies -v
+     # 2 y 3. Descargar, instalar y probar OPA directamente mediante comando nativo
+      - name: Install & Test OPA
+        run: |
+          # Descargamos el binario oficial de OPA para Linux
+          curl -L -o opa https://openpolicyagent.org/downloads/v0.61.0/opa_linux_amd64_static
+          
+          # Le damos permisos de ejecución al binario
+          chmod +x opa
+          
+          # Lo movemos a una carpeta del sistema para poder usarlo en cualquier paso del pipeline
+          sudo mv opa /usr/local/bin/
+          
+          # Ejecutamos las pruebas unitarias usando el comando global
+          opa test ./policies -v
 
       # 4. Configurar las credenciales de AWS usando OIDC (Asume el rol del Sandbox)
       - name: Configure AWS Credentials
