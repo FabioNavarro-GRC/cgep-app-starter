@@ -3,10 +3,10 @@ provider "aws" {
   skip_credentials_validation = true
   skip_requesting_account_id  = true
   skip_metadata_api_check     = true
-  
+
   # Usamos credenciales falsas estáticas obligatorias para engañar al binario
-  access_key                  = "mock_access_key"
-  secret_key                  = "mock_secret_key"
+  access_key = "mock_access_key"
+  secret_key = "mock_secret_key"
 }
 
 # 1. Llave KMS administrada por el cliente (CMK)
@@ -18,7 +18,7 @@ resource "aws_kms_key" "soc2_key" {
 
 # 2. Bucket S3 de Evidencias con Object Lock Habilitado
 resource "aws_s3_bucket" "evidence_vault" {
-  bucket        = "acme-health-soc2-evidence-vault-2026"
+  bucket              = "acme-health-soc2-evidence-vault-2026"
   object_lock_enabled = true
 }
 
