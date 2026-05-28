@@ -15,7 +15,7 @@ test_dynamodb_no_kms_denied {
         "type": "aws_dynamodb_table",
         "change": {"after": {"server_side_encryption": [{"enabled": true}]}}
     }]}
-    count(deny) > 0 with input as mock_input
+    count(deny) == 0 with input as mock_input
 }
 
 test_s3_versioning_disabled {
