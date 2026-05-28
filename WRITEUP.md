@@ -1,102 +1,118 @@
-# Acme Health - Capstone Project Write-up
+# CGE-P Capstone Architectural Write-up & Production GRC Strategy
 
-# Acme Health - Capstone Project Personal Write-up
-**Candidate:** Jose Fabio Navarro Mora
+**Candidate:** Jose Fabio Navarro Mora  
 **Certification Level:** CGE-P Candidate  
 **Target Application:** Patient Intake API  
-**Chosen Compliance Framework:** SOC 2 Type II (Security and Availability)
+**Chosen Primary Compliance Framework:** SOC 2 Type II (Security and Availability)  
+**System Version:** 2.0.0 (Production-Adjacent Upgrade)
 
 ---
 
-## 1. Introduction, Design Decisions & Why I Chose SOC 2
+## 1. Introduction, Design Decisions & Primary Framework Defense
 
-### 1.1 Hello, this is my project!
-In this project, I took a "starter kit" code repository for a telehealth company called Acme Health (which has about 50 employees) and worked on fixing its security and infrastructure. When I first looked at the code, it was a bit of a mess from a security point of view: it had cloud databases and storage buckets without encryption, and anyone or any script could access everything because the permissions were too wide.
+### 1.1 Project Overview & Context
+In this Capstone project, I assumed the role of a Lead GRC Engineer to secure a deliberately flawed telehealth microservice repository deployed by "Acme Health" (a startup with approximately 50 employees). The original baseline repository represented a high-risk compliance profile: cloud storage layer (Amazon S3) and persistent database tier (Amazon DynamoDB) lacked any form of cryptographic encryption at rest. Furthermore, the Identity and Access Management (IAM) permissions violated the fundamental security principle of least privilege by employing sweeping wildcards (`*`). 
 
-As a Senior GRC Analyst learning about GRC Engineering, my job was to build a protective wrapper around this application. I wanted to make sure that every time code is pushed to GitHub, it automatically checks for security issues, signs the proof that everything is okay, and saves that evidence in a safe place.
+My mandate was to design, implement, and audit an automated governance framework wrapping this workload. This ensuring that any infrastructure changes proposed via code are systematically verified pre-deployment, cryptographically signed, and preserved in an unalterable audit trail.
 
-### 1.2 Why I Chose SOC 2 Type II instead of other frameworks
-When I started, I had to choose a security framework. I looked at options like NIST SP 800-53 and ISO 27001, but they felt way too heavy for a 50-person startup:
-* **NIST SP 800-53:** This is what the US government uses. It has hundreds of super strict controls. If I tried to implement this here, the engineering team wouldn't be able to ship a single line of features because of the massive bureaucratic overhead.
-* **ISO 27001:** This is great for big corporate paperwork, meetings, and policies, but it doesn't give you direct, practical examples of how to configure an AWS database or an S3 bucket safely.
+### 1.2 Strategic Framework Selection & Defense (The Three-Flag Dilemma)
+Acme Health is currently pursuing three compliance milestones simultaneously: **HIPAA Security Rule** (due to handling private Patient Health Information), **CMMC Level 2** (driven by a potential federal pilot program), and **SOC 2 Type II** (mandated by an immediate enterprise customer requirement). Recognizing that a 50-person startup cannot satisfy all three frameworks in a single initial implementation without causing operational paralysis, I selected **SOC 2 Type II (Security and Availability Trust Services Criteria)** as our primary framework. Every automated layer under this architecture has been structured around it based on the following comparative defense:
 
-I chose **SOC 2 Type II (Security and Availability)** because it is the industry standard for cloud startups. It focuses on practical things: making sure patient data is safe from unauthorized people (Security) and making sure the API doesn't crash so doctors can use it (Availability). Implementing SOC 2 directly inside our GitHub pipeline means we prove compliance automatically with code, which is exactly what corporate clients ask for before buying software from a startup.
+* **Why not HIPAA as the primary framework?:** While the HIPAA Security Rule is absolutely mandatory for handling PHI, it operates primarily as a high-level regulatory law rather than a prescriptive engineering standard. HIPAA dictates *what* must be protected (e.g., ensuring confidentiality and access controls), but fails to provide a structured, automated control verification baseline mapping neatly to modern Continuous Integration (CI) execution states or JSON plan structures.
+* **Why not CMMC Level 2 as the primary framework?:** Cybersecurity Maturity Model Certification (CMMC) Level 2 is required for Department of Defense federal contractors handling Controlled Unclassified Information (CUI). CMMC introduces massive administrative and programmatic burdens, requiring extensive physical, operational, and structural documentation that is completely misaligned with the current resources of an early-stage 50-person commercial startup. Prioritizing a heavy federal pilot framework would stall application delivery without an immediate commercial guarantee.
+
+**The Selection Defense:** I prioritized **SOC 2 Type II** because it bridges the gap between regulatory intent and real-world DevSecOps engineering. SOC 2 allows us to group HIPAA data protection concerns (under the Security criteria) and system resilience needs (under the Availability criteria) into a single, comprehensive, and programmatically testable posture. By enforcing SOC 2 Trust Services Criteria programmatically inside our GitHub pipeline, we provide immediate, continuous, and empirical compliance proof to close the enterprise customer contract. This technical foundation implicitly satisfies HIPAA infrastructure requirements and positions Acme Health for a smoother, subsequent adoption of CMMC thresholds when the federal pilot matures.
 
 ---
 
-## 2. Gaps Found and How I Fixed Them in Terraform
+## 2. Risk Mitigation & Infrastructure Hardening (IaC Quality)
 
-I went through the `GAPS.md` file in the starter kit and picked 5 critical security holes to fix. Here is what I did in plain English inside the `main.tf` file:
+To systematically address infrastructure vulnerabilities, I mapped five specific technical findings to the SOC 2 framework inside `terraform/main.tf`:
 
-### GAP-01: S3 Uploads Bucket Encryption (SOC 2 CC6.1 - Data Protection)
-* **The Problem:** The bucket where patients upload files was open and unencrypted at rest. If someone managed to access AWS storage, they could read patient files like an open book.
-* **My Fix:** I created a Customer-Managed Key (CMK) using AWS KMS. I also turned on automatic key rotation every year. Then, I updated the S3 bucket configuration to force it to use this specific key. Now, data is automatically scrambled the second it hits the disk.
+### GAP-01: S3 Uploads Bucket Encryption (SOC 2 CC6.1 - Data Protection / HIPAA §164.312(a)(2)(iv))
+* **Vulnerability:** The public S3 storage bucket destined for patient intake attachments completely lacked encryption at rest, leaving files exposed to physical data center extraction risks or misconfigurations.
+* **Remediation:** I provisioned an explicit Customer Managed Key (CMK) via AWS KMS with a strict annual rotation schedule. I updated the `aws_s3_bucket_server_side_encryption_configuration` resource block to enforce standard `aws:kms` algorithms using this dedicated CMK. Data is now cryptographically scrambled the instant it hits AWS disk space.
 
-### GAP-02: DynamoDB Table Encryption (SOC 2 CC6.1 - Data Protection)
-* **The Problem:** The database storing active patient forms was using standard AWS-owned keys. This works, but we don't control the key lifecycle.
-* **My Fix:** I modified the `aws_dynamodb_table.intake` resource block to explicitly use our new KMS key instead of the generic AWS one. Now, our company has full cryptographic control over the database data.
+### GAP-02: DynamoDB Table Encryption (SOC 2 CC6.1 - Data Protection / HIPAA §164.312(e)(2)(ii))
+* **Vulnerability:** The persistent storage layer handling private patient intake forms relied on standard AWS-managed keys. While technically encrypted, this configuration prevents the organization from managing key lifecycles, auditing key access, or exercising cross-tenant logical access controls.
+* **Remediation:** I modified the `aws_dynamodb_table` resource block to explicitly declare server-side encryption pointing to our dedicated Customer Managed Key (`aws_kms_key`). This guarantees exclusive cryptographic custody of health records.
 
 ### GAP-03: Blocking Non-Secure Connections (SOC 2 CC6.7 - Secure Transmission)
-* **The Problem:** The bucket was allowing normal `http://` requests, which means hackers could potentially intercept patient data in transit through a Man-in-the-Middle attack.
-* **My Fix:** I wrote an explicit S3 Bucket Policy with a `Deny` statement. It basically says: "If the connection is NOT using secure HTTPS (`aws:SecureTransport == false`), block the request immediately."
+* **Vulnerability:** The ingestion bucket allowed unencrypted connections via standard cleartext HTTP, leaving patient data vulnerable to packet interception and Man-in-the-Middle (MitM) attacks.
+* **Remediation:** I implemented a strict `aws_s3_bucket_policy` attaching an explicit `Deny` statement to the storage resource. The conditional logic explicitly targets any API requests where `aws:SecureTransport` evaluates to `false`, dropping unencrypted data in transit before processing.
 
 ### GAP-04: S3 Bucket Versioning and Integrity (SOC 2 A1.2 - Availability)
-* **The Problem:** If an engineer accidentally deleted a patient file, or if ransomware hit the bucket, the files would be gone forever.
-* **My Fix:** I added an `aws_s3_bucket_versioning` resource to make it append-only. If someone deletes a file, AWS just puts a "delete marker" on top, but the old versions remain safe underneath so we can recover them instantly.
+* **Vulnerability:** S3 objects could be permanently deleted by simple human error or malicious ransomware vectors, causing a catastrophic loss of data availability for medical operators.
+* **Remediation:** I declared an `aws_s3_bucket_versioning` resource block setting the status parameter to `Enabled`. This transforms the storage vault into an append-only ledger, preserving chronological states underneath deletion markers to ensure rapid disaster recovery windows.
 
-### GAP-07: Cleaning up the Lambda Permissions (SOC 2 CC6.3 - Access Modification)
-* **The Problem:** The backend Lambda function had a wildcard policy (`dynamodb:*` and `s3:*`). This meant that if someone hacked the Lambda function, they could delete our entire database.
-* **My Fix:** I deleted the wildcards and changed the permissions to use specific actions like `dynamodb:PutItem` and `s3:PutObject`. Now, the Lambda function can only do exactly what it needs to do to work, nothing more.
-
----
-
-## 3. My GitHub Actions Pipeline and Real Problems Faced
-
-### 3.1 The 5 Required Steps
-To automate everything, I built a workflow file named `.github/workflows/grc-gate.yml`. The rubric required exactly five named steps to process the code in order:
-1. **Plan:** It runs `terraform plan` and turns the output into a JSON file so that other tools can read it.
-2. **Policy Check:** It installs Open Policy Agent (OPA) and scans that JSON file to make sure no engineer is trying to deploy an unencrypted bucket.
-3. **Apply:** If OPA says the code is safe, it deploys the infrastructure.
-4. **Sign:** It uses a tool called Cosign to sign a cryptographic proof file showing that this specific deployment was checked and approved.
-5. **Upload:** It uploads that signature file (`compliance-evidence.sig`) to our Object-Locked S3 vault for auditors to see.
-
-### 3.2 Sincere Tooling Trade-offs & Troubles I Ran Into
-Since I am learning how to use these tools, I ran into real problems that I had to solve, forcing me to change how the pipeline works:
-
-* **The OPA Network Failure (`curl` vs. Official Actions):** Originally, I copied a tutorial that downloaded the OPA tool using a manual `curl` command from the internet. During my pipeline runs, this step randomly failed with a `curl: (56) Failure when receiving data from the peer` error and froze for 5 minutes. I realized that relying on downloading files via `curl` makes the pipeline unstable if remote servers experience blips. To fix this, I completely replaced the manual script with the official GitHub Action `open-policy-agent/setup-opa@v2`. This made the step stable, secure, and reduced the setup time to just 3 seconds.
-* **Cosign Offline Mode (`--tlog-upload=false`):** By default, Cosign tries to upload code-signing records to a public internet transparency log called Rekor. But because we are a healthcare company handling private patient information, uploading details about our private infrastructure to a public ledger is a bad idea. I made a conscious trade-off to add the `--tlog-upload=false` flag. This keeps our security audits 100% private and inside our company perimeter.
+### GAP-07: Least Privilege Lambda IAM Policies (SOC 2 CC6.3 - Perimeter Defense / CMMC AC.L2-3.1.1)
+* **Vulnerability:** The compute tier execution role contained broad wildcards (`s3:*` and `dynamodb:*`). If an application vulnerability allowed Remote Code Execution (RCE), the entire cloud state could be completely compromised.
+* **Remediation:** I refactored the IAM inline policies to restrict permissions down to specialized APIs: `dynamodb:PutItem` and `s3:PutObject`. The blast radius is now confined strictly to standard application transactions.
 
 ---
 
-## 4. OPA Policies and How I Tested Them
+## 3. DevSecOps CI/CD Integration & Automated Enforcement
 
-To make the **Policy Check** work, I wrote rules using a language called Rego in `soc2_security.rego`.
+### 3.1 The Strict Enforcement Gate (5 Mandated Steps)
+The delivery pipeline defined in `.github/workflows/grc-gate.yml` implements a production-grade automated compliance gate structured around exactly five functional stages:
 
-### 4.1 How the policies work
-The Rego script reads the JSON file from our Terraform Plan. It loops through all the resources we are trying to create. For example, it checks if a database table has encryption turned on. If it finds a resource that violates our rules, it triggers a `deny` message that breaks the GitHub pipeline and shows an error like: *"DynamoDB Table must use our KMS CMK key!"*
+1.  **Plan:** Initializes HashiCorp Terraform within the runner, runs a dry-run plan, and converts the binary output into an audit-ready JSON structure (`terraform show -json`).
+2.  **Policy Check:** Provisions the modern Open Policy Agent (OPA) binary and scans the plan JSON against our infrastructure rules. Rather than acting as a passive reporting tool, I implemented a strict enforcement script using `jq`. If OPA returns any active policy violations, the step forces an immediate `exit 1` block. This effectively paints the pipeline red and terminates the build before any infrastructure is altered.
+3.  **Apply:** A mocked structural step executing deployment logic solely if the upstream compliance gate evaluates to zero active violations.
+4.  **Sign:** Leverages the Sigstore `Cosign` suite to cryptographically sign the generated compliance report file, preventing evidence tampering by internal actors.
+5.  **Upload:** Packages the artifact trail (`compliance-evidence.json` and its respective cryptographic signature file `.sig`) and persists them as a long-term GitHub workflow artifact, establishing an automated ledger for external auditors.
 
-### 4.2 How I tested my policies
-To be absolutely sure my rules worked, I wrote a separate file called `soc2_security_test.rego` to run unit tests on my policy. 
-* I created a **Mock Compliant Plan** (a fake plan that is perfectly configured) and tested that OPA allowed it through (`count(deny) == 0`).
-* I created a **Mock Non-Compliant Plan** (an intentionally broken plan with missing encryption) and verified that OPA caught it and blocked it.
-Running `opa test` ensures that if our security rules are ever modified or accidentally broken, the tests will catch the mistake immediately.
+### 3.2 Real-World Engineering Trade-offs & Tooling Failures
+Navigating the complexities of automation required deep troubleshooting and significant modifications to standard reference configurations:
 
----
-
-## 5. OSCAL Integration (Connecting Code to Compliance)
-
-One of the hardest parts for me to understand at first was OSCAL (`component-definition.json`). Usually, security compliance means writing a 100-page Word document that nobody reads and that becomes outdated the next day. 
-
-OSCAL (Open Security Controls Assessment Language) fixes this by turning compliance into a machine-readable JSON file. I structured our file using the official **OSCAL 1.1.0 schema**. 
-
-Inside the JSON file, I explicitly mapped our real-world components (like our `Acme Health Secure Infrastructure`) directly to the SOC 2 control ID `CC6.1`. This creates a digital link: the auditor doesn't need to log into my AWS console to see if the database is encrypted; they can just use an automated compliance tool to read our OSCAL file and verify that our automated pipeline checks match our official security framework policies.
+* **The OPA Network Bottleneck (Custom Scripts vs. Official Marketplace Actions):** Early iterations relied on downloading the OPA engine on-the-fly via a manual bash script with a standard `curl` invocation. During baseline runs, this step frequently failed with a `curl: (56) Failure when receiving data from the peer` network exception, freezing the container for five minutes before dropping the job. Relying on basic web downloads introduces single points of failure in private pipelines. To address this, I fully refactored the step to ingest the official marketplace action `open-policy-agent/setup-opa@v2`, stabilizing runner builds and dropping runtime overhead down to three seconds.
+* **Cosign Data Leakage & Privacy Trade-off (`--tlog-upload=false`):** By default, Cosign uploads public cryptographic hashes and transparency log parameters to the public Rekor ledger on the open internet. For a healthcare provider bound by strict privacy frameworks, leaking metadata regarding private infrastructure configurations to a public repository creates a serious reconnaissance attack surface. I made a deliberate security trade-off by adding the `--tlog-upload=false` flag. This maintains a private and isolated compliance log inside the organizational perimeter.
 
 ---
 
-## 6. What I Didn't Get to Do
+## 4. Policy-as-Code Syntax Modernization & Test Coverage
 
-Because this is a laboratory environment and I had to work through network issues, platform restrictions, and learning curves, there are several things I could not finish. This is my honest backlog for future improvements:
+### 4.1 Modern Rego Implementation
+Following rigorous validation constraints, the OPA rule engine defined in `policies/soc2_security.rego` was upgraded to conform to the strict `rego.v1` specifications required by modern compilers. This included appending the mandatory `if` keyword before every rule declaration block:
 
-1. **Hardware Security Modules (HSM) for Keys:** Right now, during the `Sign` stage, Cosign generates local, temporary file-based keys on the fly using an environment variable password. In a mature company, this is a risk because environment passwords can leak. In the future, I want to store these signing certificates inside a real cloud hardware security module, like AWS KMS HSM, so nobody can ever see or copy the private key.
-2. **Handling Organization Workflow Approvals:** When opening Pull Requests from my personal account to the organization repository, GitHub flags the workflow as *"Awaiting approval from a maintainer"*. Because I do not have administrative privileges over the core organization organization runners, I had to do my primary testing and validation runs offline and in direct branch pushes. In a real corporate setup, I would need to work with the DevOps team to pre-approve developer forks or use self-hosted enterprise runners to avoid this approval bottleneck.
+```rego
+package soc2.security
+import rego.v1
 
+deny[msg] if {
+    resource := input.resource_changes[_]
+    resource.type == "aws_s3_bucket_server_side_encryption_configuration"
+    rule := resource.change.after.rule[_]
+    enc := rule.apply_server_side_encryption_by_default[_]
+    enc.sse_algorithm != "aws:kms"
+    msg := sprintf("SOC 2 Violación [CC6.1]: El bucket '%v' debe usar cifrado SSE-KMS con una llave CMK.", [resource.address])
+}
+This strict architectural layout parses the incoming JSON, filters resource changes, evaluates parameters against the predefined baseline constraints, and dynamically prints explicit compliance warning arrays if violations occur.
+
+4.2 Comprehensive Matrix Testing
+To satisfy rigorous control testing dimensions, the file policies/soc2_security_test.rego was heavily expanded. It implements a bidirectional test matrix verifying both compliant and non-compliant inputs across all mapped trust criteria:
+
+Negative Testing (test_..._denied): Feeds a mock plan containing standard AES256 encryption or disabled versioning parameters, verifying that the deny list accurately captures the failure and increments the violation payload.
+
+Positive Testing (test_..._approved): Feeds a compliant cloud setup containing valid KMS CMK settings, certifying that OPA allows the build through without raising false-positive blocks (count(deny) == 0).
+
+5. Continuous Real-Time Threat Detection & Monitoring
+Recognizing that pre-deployment CI/CD gates cannot prevent manual alterations or accidental "hot-fixes" performed directly inside the AWS Management Console (causing configuration drift), I extended the architecture by adding an active threat monitoring layer under monitoring/detection_lambda.py.
+
+This Python script is designed to process streaming logs from aws_cloudtrail in real time via EventBridge. It provides active detection logic that explicitly extracts provenance data (the acting user's identity ARN, exact event timestamps, and specific target resource boundaries) and generates high-priority audit warnings:
+
+CC6.1 Ingestion Alerts: It evaluates incoming PutBucketEncryption and DeleteBucketEncryption API payloads. If a user downgrades storage security controls, it flags the event as an explicit error, logging the exact source and control violation ID to protect PHI against HIPAA leaks.
+
+CC6.3 Privilege Escalation: It captures drift in permission bounds by monitoring manual PutRolePolicy or CreatePolicyVersion events, bridging the gap between static code assurance and runtime operational reality.
+
+6. Open Security Controls Assessment Language (OSCAL)
+To modernize our regulatory posture, I introduced a machine-readable governance document at the root directory called component-definition.json, adhering strictly to the standardized NIST OSCAL 1.1.0 JSON Schema.
+
+Instead of allowing security compliance to become static, siloed documentation inside legacy spreadsheets, OSCAL allows compliance tracking to become fully integrated with development. The component file establishes a clear link between our specific code controls (the OPA engine steps and the active Lambda logging system) and the formal SOC 2 control catalog, mapping its operational extensions directly to HIPAA and CMMC boundaries. External auditors can ingest this document using automated GRC analysis engines, confirming our security posture programmatically without conducting manually intensive architecture reviews.
+
+7. Limitations & Engineering Backlog (Honest Retrospective)
+Because this system was developed in a sandboxed lab environment with explicit network boundaries and learning trajectories, several enterprise enhancements remain on the roadmap:
+
+Hardware Security Modules (HSM) for Key Management: During the automated Sign workflow step, Cosign currently generates localized, file-based ephemeral private keys backed by standard environment variable passwords. In an enterprise deployment, exposing signing passwords within standard runner contexts creates an insider threat vector. The ideal long-term strategy requires storing the cryptographic keys inside a dedicated hardware security module (e.g., AWS KMS CloudHSM), ensuring that the private key material can never be extracted or read by external code logs.
+
+Handling Organization Workflow Approvals: When pushing updates from my developer account to the core organization repository (GRCEngClub), GitHub Actions automatically triggers a protection gate stating: "Awaiting approval from a maintainer". Since I do not possess full administrative permissions over the parent organization runners, I could not force execution on their internal nodes directly. I mitigated this restriction by performing validation runs offline and via branch executions on my local forks. In production, this must be solved by working with corporate DevOps teams to whitelist specialized developer paths or utilizing self-hosted enterprise runner groups.
