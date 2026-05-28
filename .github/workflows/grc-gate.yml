@@ -40,10 +40,14 @@ jobs:
 
       # 1. Plan
       - name: Plan
+        env:
+          AWS_ACCESS_KEY_ID: mock_access_key
+          AWS_SECRET_ACCESS_KEY: mock_secret_key
+          AWS_DEFAULT_REGION: us-east-1
         run: |
           cd terraform
           terraform init -backend=false
-          # Generamos el plan real de Terraform sin banderas adicionales de backend
+          # Generamos el plan real offline forzando el salto de validaciones externas
           terraform plan -out=tfplan
           terraform show -json tfplan > tfplan.json
 

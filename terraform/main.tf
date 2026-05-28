@@ -1,5 +1,12 @@
 provider "aws" {
-  region = "us-east-1"
+  region                      = "us-east-1"
+  skip_credentials_validation = true
+  skip_requesting_account_id  = true
+  skip_metadata_api_check     = true
+  
+  # Usamos credenciales falsas estáticas obligatorias para engañar al binario
+  access_key                  = "mock_access_key"
+  secret_key                  = "mock_secret_key"
 }
 
 # 1. Llave KMS administrada por el cliente (CMK)
