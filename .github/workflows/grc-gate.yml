@@ -58,14 +58,14 @@ jobs:
       # 8. Generar firma digital criptográfica de la evidencia (Capa 3 de Gobernanza)
       - name: Sign Evidence Locally
         run: |
-          # Declaramos una contraseña vacía para que el prompt interactivo no congele el pipeline
+          # Configuramos la variable para que no pida contraseña interactivamente
           export COSIGN_PASSWORD=""
           
-          # Generamos el par de llaves cosign.key y cosign.pub por defecto usando la bandera nativa
-          cosign generate-key-pair --yes
+          # Generamos el par de llaves básico (esto creará cosign.key y cosign.pub por defecto)
+          cosign generate-key-pair
           
-          # Firmamos el archivo de evidencias usando la llave privada nativa generada
-          cosign sign-blob --key cosign.key --output-signature compliance-evidence.sig compliance-evidence.json --yes
+          # Firmamos el reporte de evidencia usando la llave privada generada
+          cosign sign-blob --key cosign.key compliance-evidence.json > compliance-evidence.sig
           
           echo "✅ CUMPLIMIENTO EXITOSO: Estructura de control validada."
           echo "🔒 Evidencia firmada digitalmente con Cosign de forma exitosa."
